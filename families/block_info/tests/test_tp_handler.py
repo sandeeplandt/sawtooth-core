@@ -67,4 +67,3 @@ class TestHandler(unittest.TestCase):
     def test_validate_hex_ve(self):
         string_hex = validate_hex("test", 128)
         self.assertEqual(string_hex, False)
-   

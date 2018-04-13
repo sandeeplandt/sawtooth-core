@@ -32,7 +32,7 @@ services:
       - $SAWTOOTH_CORE:/project/sawtooth-core
     expose:
       - 4004
-    command: nose2-3 --coverage-report term-missing
+    command: nose2-3 
         -c /project/sawtooth-core/families/block_info/nose2.cfg
         -v
         -s /project/sawtooth-core/families/block_info/tests
