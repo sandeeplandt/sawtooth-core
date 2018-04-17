@@ -14,6 +14,7 @@
 # ------------------------------------------------------------------------------
 
 import unittest
+import os
 
 from sawtooth_block_info.processor.config.block_info \
 import load_default_block_info_config,\
@@ -35,10 +36,13 @@ class TestBlockInfoConfig(unittest.TestCase):
     def test_load_toml_block_info_config(self):
         """ Tests value inside toml load file """
         filename = "test_block_info.toml"
-        with open(filename, 'w') as fd:
-            fd.write('connect = "tcp://blarg:1234"')
-        block_config_filename = load_toml_block_info_config(filename)
-        self.assertEqual(block_config_filename.connect, "tcp://blarg:1234")
+        try:
+            with open(filename, 'w') as fd:
+                fd.write('connect = "tcp://blarg:1234"')
+            block_config_filename = load_toml_block_info_config(filename)
+            self.assertEqual(block_config_filename.connect, "tcp://blarg:1234")
+        finally:
+            os.remove(filename)
 
     def test_merge_config(self):
         """ Tests the merge of all toml config files """
@@ -64,7 +68,10 @@ class TestBlockInfoConfig(unittest.TestCase):
 
     def test_load_toml_block_info_config_invalidkeys(self):
         filename = "a.toml"
-        with open(filename, 'w') as fd:
-            fd.write('ty = "tcp://test:4004"')
-        with self.assertRaises(LocalConfigurationError):
-            load_toml_block_info_config(filename)
+        try:
+            with open(filename, 'w') as fd:
+                fd.write('ty = "tcp://test:4004"')
+            with self.assertRaises(LocalConfigurationError):
+                load_toml_block_info_config(filename)
+        finally:
+            os.remove(filename)
