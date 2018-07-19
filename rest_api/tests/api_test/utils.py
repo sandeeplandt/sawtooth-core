@@ -362,4 +362,15 @@ def wait_for_rest_apis(endpoints, tries=5):
             '{}/blocks'.format(url),
             status_code=200,
             tries=tries)
-    
+
+def post_batch_statuses(batch):
+    headers = {'content-type': 'application/json'}
+    response = query_rest_api(
+        '/batch_statuses', data=batch, headers=headers)
+    #response = submit_request('{}&wait={}'.format(response['link'], WAIT))
+    return response
+
+def get_batch_statuses(batch_id):
+    response = query_rest_api('/batch_statuses?id={}' % batch_id)
+    #return base64.b64decode(response['data'])
+    return response['data']    

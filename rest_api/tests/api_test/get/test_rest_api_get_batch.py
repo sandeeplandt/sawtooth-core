@@ -21,7 +21,7 @@ import urllib.error
 
  
 from fixtures import break_genesis, invalid_batch
-from utils import get_batches, post_batch
+from utils import get_batches, post_batch, post_batch_statuses 
 
 from base import RestApiBaseTest
 
@@ -273,4 +273,51 @@ class TestBatchList(RestApiBaseTest):
 # #         
 # #       
 # #     def test_api_get_bad_batch_id(self):
-# #         pass    
+# #         pass   
+
+class TestBatchStatusesList(RestApiBaseTest):
+    """This class tests the batch list with different parameters
+    """
+    def test_api_post_batch_status_15ids(self, setup):   
+        """verifies that GET /batches is unreachable with bad head parameter 
+        """
+        LOGGER.info("Starting test for batch with bad head parameter")
+        data = {}
+        batch_ids = setup['batch_ids']
+        data['batch_ids'] = batch_ids
+        expected_head = setup['expected_head']
+        expected_id = batch_ids[0]
+        reverse = True
+        #print (type(data['batch_ids']))
+        data_str=json.dumps(data['batch_ids']).encode()
+                        
+        try:
+            response = post_batch_statuses(data_str)
+            assert response['data'][0]['status'] == "COMMITTED"
+        except urllib.error.HTTPError as error:
+            assert response.code == 400
+   
+    def test_api_post_batch_status_10ids(self, setup):   
+        """verifies that GET /batches is unreachable with bad head parameter 
+        """
+        LOGGER.info("Starting test for batch with bad head parameter")
+        data = {}
+        values = []
+        batch_ids = setup['batch_ids']
+        data['batch_ids'] = batch_ids
+        expected_head = setup['expected_head']
+        expected_id = batch_ids[0]
+        reverse = True
+        for i in range(10):
+            values.append(data['batch_ids'][i])
+        #print (values)
+        #print (type(values))
+        data_str=json.dumps(values).encode()
+                        
+        try:
+            response = post_batch_statuses(data_str)
+            assert response['data'][0]['status'] == "COMMITTED"
+        except urllib.error.HTTPError as error:
+            assert response.code == 400
+  
+ 
