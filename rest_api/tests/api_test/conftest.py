@@ -220,3 +220,4 @@ def setup(request):
     state_head_list = [get_state(address)['head'] for address in state_addresses]
     data['state_head'] = state_head_list
     return data
+

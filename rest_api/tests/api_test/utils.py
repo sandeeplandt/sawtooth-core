@@ -162,8 +162,11 @@ def get_state(address):
     response = query_rest_api('/state/%s' % address)
     return response
 
-def post_batch(batch):
-    headers = {'Content-Type': 'application/octet-stream'}
+def post_batch(batch, headers="None"):
+    if headers=="True":
+        headers = {'Content-Type': 'application/json'}  
+    else:
+        headers = {'Content-Type': 'application/octet-stream'}
     
     response = query_rest_api(
         '/batches', data=batch, headers=headers)
@@ -371,6 +374,13 @@ def post_batch_statuses(batch):
     return response
 
 def get_batch_statuses(batch_id):
-    response = query_rest_api('/batch_statuses?id={}' % batch_id)
+    response = query_rest_api('/batch_statuses?id={}' % batch_id )
     #return base64.b64decode(response['data'])
-    return response['data']    
+    return response['data']  
+
+def get_state_limit(limit):
+    response = query_rest_api('/state?limit=%s' % limit)
+    #return base64.b64decode(response['data'])
+    return response['data']
+
+
