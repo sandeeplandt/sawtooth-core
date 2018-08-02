@@ -43,7 +43,7 @@ from google.protobuf.json_format import MessageToDict
 from utils import get_batches,  get_transactions, get_state, post_batch, get_blocks,\
                   get_state_list , _delete_genesis , _start_validator, \
                   _stop_validator , _create_genesis , wait_for_rest_apis , _get_client_address, \
-                  _stop_settings_tp, _start_settings_tp
+                  _stop_settings_tp, _start_settings_tp, _get_client_address
 
 from payload import get_signer, create_intkey_transaction , create_batch
                   
@@ -51,6 +51,9 @@ from payload import get_signer, create_intkey_transaction , create_batch
 
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel(logging.INFO)
+
+
+LIMIT = 100
                   
  
   
@@ -151,43 +154,53 @@ def setup(request):
     """
     data = {}
     signer = get_signer()
-    expected_trxns  = []
+    expected_trxns  = {}
     expected_batches = []
+    transaction_list = []
     initial_state_length = len(get_state_list())
+    initial_batch_length = len(get_batches()['data'])
+    initial_transaction_length = len(get_transactions()['data'])
+    address = _get_client_address()
 
     LOGGER.info("Creating intkey transactions with set operations")
     
     txns = [
         create_intkey_transaction("set", [] , 50 , signer),
+        create_intkey_transaction("set", [] , 50 , signer),
     ]
 
     for txn in txns:
-        data = MessageToDict(
+        dict = MessageToDict(
                 txn,
                 including_default_value_fields=True,
                 preserving_proto_field_name=True)
-
-        trxn_id = data['header_signature']
-        expected_trxns.append(trxn_id)
-    
-    
+                
+        expected_trxns['trxn_id'] = [dict['header_signature']]
+        expected_trxns['payload'] = [dict['payload']]
+                    
     LOGGER.info("Creating batches for transactions 1trn/batch")
 
     batches = [create_batch([txn], signer) for txn in txns]
 
     for batch in batches:
-        data = MessageToDict(
+        dict = MessageToDict(
                 batch,
                 including_default_value_fields=True,
                 preserving_proto_field_name=True)
 
-        batch_id = data['header_signature']
+        batch_id = dict['header_signature']
         expected_batches.append(batch_id)
     
-    data['expected_txns'] = expected_trxns[::-1]
+        
+    length_batches = len(expected_batches)
+    length_transactions = len(expected_trxns)
+        
+    data['expected_length'] = initial_batch_length + length_batches
+    data['expected_txns'] = expected_trxns['trxn_id'][::-1]
+    data['payload'] = expected_trxns['payload'][::-1]
     data['expected_batches'] = expected_batches[::-1]
     data['signer_key'] = signer.get_public_key().as_hex()
-
+    
     post_batch_list = [BatchList(batches=[batch]).SerializeToString() for batch in batches]
     
     LOGGER.info("Submitting batches to the handlers")
@@ -219,5 +232,8 @@ def setup(request):
     data['address'] = state_addresses
     state_head_list = [get_state(address)['head'] for address in state_addresses]
     data['state_head'] = state_head_list
+    data['address'] = address
+    data['limit'] = LIMIT
+    data['start'] = expected_batches[::-1][0]
     return data
 
