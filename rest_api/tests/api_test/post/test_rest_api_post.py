@@ -47,10 +47,9 @@ from conftest import setup
                   
 
 from payload import get_signer, create_intkey_transaction, create_batch, create_intkey_same_transaction
-                  _get_node_list, _get_node_chains
                   
 
-from payload import get_signer, create_intkey_transaction, create_batch
+from payload import get_signer, create_intkey_transaction, create_batch, check_key_state
 
 
 
@@ -463,6 +462,146 @@ class TestBatchStatusesList(RestApiBaseTest):
             assert response['data'][0]['status'] == "COMMITTED"
         except urllib.error.HTTPError as error:
             assert response.code == 400
+            
+    def test_api_inc_notstate_txns(self, setup):
+        """Tests the rest-api by submitting intkey inc transactions 
+        """
+        LOGGER.info('Starting test for intkey inc post')
+    
+        signer = get_signer()
+        # check set
+        response=check_key_state(100)
+        if response==1:
+            
+            LOGGER.info("Checking intkey increment operations")
+            txns = [
+                create_intkey_transaction("inc", [] , 50 , signer),   
+            ]
+        
+            for txn in txns:
+                data = MessageToDict(
+                        txn,
+                        including_default_value_fields=True,
+                        preserving_proto_field_name=True)
+        
+                trxn_id = data['header_signature']
+                #expected_trxn_ids.append(trxn_id)
+        
+            LOGGER.info("Creating batches for transactions 1trn/batch")
+        
+            batches = [create_batch([txn], signer) for txn in txns]
+        
+            for batch in batches:
+                data = MessageToDict(
+                        batch,
+                        including_default_value_fields=True,
+                        preserving_proto_field_name=True)
+        
+                batch_id = data['header_signature']
+                #expected_batch_ids.append(batch_id)
+        
+            post_batch_list = [BatchList(batches=[batch]).SerializeToString() for batch in batches]
+        
+            LOGGER.info("Submitting batches to the handlers")
+            for batch in post_batch_list:
+                try:
+                    response = post_batch(batch,headers="None")
+                    self.assert_commit_invalid(response['data'][0]['status'])
+                except urllib.error.HTTPError as e:
+                    self.assert_400()     
+        else:
+            LOGGER.info("key is already set")
+            self.assert_False()
+            
+    def test_api_dec_notstate_txns(self, setup):
+        """Tests the rest-api by submitting intkey dec transactions 
+        """
+        LOGGER.info('Starting test for intkey dec post')
+    
+        
+        LOGGER.info('Starting test for batch post')
+        response=check_key_state(100)
+        if response==1:
+    
+            signer = get_signer()
+        
+            LOGGER.info("Creating intkey transactions with dec operations")
+            txns = [
+                create_intkey_transaction("dec", [] , 50 , signer),
+            ]
+        
+            for txn in txns:
+                data = MessageToDict(
+                        txn,
+                        including_default_value_fields=True,
+                        preserving_proto_field_name=True)
+        
+                trxn_id = data['header_signature']
+                #expected_trxn_ids.append(trxn_id)
+        
+            LOGGER.info("Creating batches for transactions 1trn/batch")
+        
+            batches = [create_batch([txn], signer) for txn in txns]
+            #print (batches)
+        
+            for batch in batches:
+                data = MessageToDict(
+                        batch,
+                        including_default_value_fields=True,
+                        preserving_proto_field_name=True)
+        
+                batch_id = data['header_signature']
+                #expected_batch_ids.append(batch_id)
+        
+            post_batch_list = [BatchList(batches=[batch]).SerializeToString() for batch in batches]
+        
+            LOGGER.info("Submitting batches to the handlers")
+        
+            for batch in post_batch_list:
+                try:
+                    response = post_batch(batch,headers="None")
+                    self.assert_commit_invalid(response['data'][0]['status'])
+                except urllib.error.HTTPError as e:
+                    pass
+                    self.assert_400()
+        else:
+            LOGGER.info("Key is already set")
+            self.assert_False()
+                
+    def test_api_post_batch_statuses_int_err(self, setup):   
+        """verifies post /batch_statuses with internal error
+        """
+        data = {}
+        values = []
+        batch_ids = setup['batch_ids']
+        data['batch_ids'] = batch_ids
+        for i in range(1):
+            values.append(data['batch_ids'][i])
+        data_str=json.dumps(values).encode()
+        data=data_str[::-1]
+                        
+        try:
+            response = post_batch_statuses(data)
+        except urllib.error.HTTPError as error:
+            self.assert_500(error.code)
+            
+    def test_api_post_batch_statuses_bad_req(self, setup):   
+        """verifies post /batch_statuses with bad request
+        """
+        data = {}
+        values = []
+        batch_ids = setup['batch_ids']
+        data['batch_ids'] = batch_ids
+        for i in range(1):
+            values.append(data['batch_ids'][i])
+            v=values.pop()
+        data_str=json.dumps(v).encode()
+                        
+        try:
+            response = post_batch_statuses(data_str)
+        except urllib.error.HTTPError as error:
+            self.assert_400(error.code)
+    
             
     
 

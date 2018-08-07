@@ -24,6 +24,7 @@ import os
 import time
 import random
 import string
+import subprocess
 
 
 from sawtooth_signing import create_context
@@ -189,4 +190,11 @@ def random_word_list(count):
 
 def make_bad_protobuf():
     pass
+
+def check_key_state(count):
+    words = random_word_list(count)
+    name=random.choice(words) 
+    value=subprocess.call(['intkey', 'show', name])
+    return value
+
     

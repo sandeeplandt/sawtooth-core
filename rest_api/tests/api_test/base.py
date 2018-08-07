@@ -260,3 +260,18 @@ class RestApiBaseTest(object):
         """Asserts state is updated properly
         """
         pass
+    
+    def assert_500(self, code):
+        assert code==500
+        
+    def assert_400(self, code):
+        assert code==400
+        
+    def assert_True(self):
+        assert True
+        
+    def assert_False(self):
+        assert False
+        
+    def assert_commit_invalid(self, response):
+        assert "INVALID" == response
