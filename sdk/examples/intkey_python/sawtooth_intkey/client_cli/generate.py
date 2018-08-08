@@ -37,7 +37,7 @@ from sawtooth_intkey.processor.handler import make_intkey_address
 LOGGER = logging.getLogger(__name__)
 
 
-class IntKeyPayload(object):
+class IntKeyPayload:
     def __init__(self, verb, name, value):
         self._verb = verb
         self._name = name
@@ -81,7 +81,7 @@ def create_intkey_transaction(verb, name, value, signer):
         dependencies=[],
         payload_sha512=payload.sha512(),
         batcher_public_key=signer.get_public_key().as_hex(),
-        nonce=time.time().hex().encode())
+        nonce=hex(random.randint(0, 2**64)))
 
     header_bytes = header.SerializeToString()
 

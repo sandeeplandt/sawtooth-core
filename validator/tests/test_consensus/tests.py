@@ -3,6 +3,8 @@ from unittest.mock import Mock
 
 from sawtooth_validator.consensus import handlers
 from sawtooth_validator.consensus.proxy import ConsensusProxy
+from sawtooth_validator.consensus.proxy import UnknownBlock
+from sawtooth_validator.consensus.proxy import StartupInfo
 
 
 class FinalizeBlockResult:
@@ -17,6 +19,7 @@ class TestHandlers(unittest.TestCase):
 
     def setUp(self):
         self.mock_proxy = Mock()
+        self.mock_consensus_notifier = Mock()
 
     def test_consensus_register_handler(self):
         mock_chain_head = Mock()
@@ -25,8 +28,13 @@ class TestHandlers(unittest.TestCase):
         mock_chain_head.signer_public_key = "abcd"
         mock_chain_head.block_num = 12
         mock_chain_head.consensus = b"deadbeef"
-        self.mock_proxy.register.return_value = mock_chain_head, []
-        handler = handlers.ConsensusRegisterHandler(self.mock_proxy)
+        mock_startup_info = StartupInfo(
+            chain_head=mock_chain_head,
+            peers=['dead', 'beef'],
+            local_peer_info=b'abc')
+        self.mock_proxy.register.return_value = mock_startup_info
+        handler = handlers.ConsensusRegisterHandler(
+            self.mock_proxy, self.mock_consensus_notifier)
         request_class = handler.request_class
         request = request_class()
         request.name = "test"
@@ -34,6 +42,9 @@ class TestHandlers(unittest.TestCase):
         result = handler.handle(None, request.SerializeToString())
         response = result.message_out
         self.assertEqual(response.status, handler.response_class.OK)
+        self.assertEqual(response.chain_head.block_id, bytes.fromhex("dead"))
+        self.assertEqual(response.peers[0].peer_id, bytes.fromhex("dead"))
+        self.assertEqual(response.local_peer_info.peer_id, b'abc')
         self.mock_proxy.register.assert_called_with()
 
     def test_consensus_send_to_handler(self):
@@ -259,19 +270,12 @@ class TestProxy(unittest.TestCase):
         self.assertEqual(summary, b"summary")
 
     def test_finalize_block(self):
-        self._mock_block_publisher.finalize_block.return_value =\
-            FinalizeBlockResult(
-                block=None,
-                remaining_batches=None,
-                last_batch=None,
-                injected_batches=None)
-        self._mock_block_publisher.publish_block.return_value = "00"
+        self._mock_block_publisher.finalize_block.return_value = "00"
 
         data = bytes([0x56])
         self._proxy.finalize_block(data)
         self._mock_block_publisher.finalize_block.assert_called_with(
             consensus=data)
-        self._mock_block_publisher.publish_block.assert_called_with(None, None)
 
     def test_cancel_block(self):
         self._proxy.cancel_block()
@@ -283,9 +287,9 @@ class TestProxy(unittest.TestCase):
         self._mock_block_cache["56"] = "block0"
         self._mock_block_cache["78"] = "block1"
         self._proxy.check_blocks(block_ids)
-        self._mock_chain_controller\
-            .submit_blocks_for_verification\
-            .assert_called_with(["block0", "block1"])
+
+        with self.assertRaises(UnknownBlock):
+            self._proxy.check_blocks([bytes([0x00])])
 
     def test_commit_block(self):
         self._mock_block_cache["34"] = "a block"
@@ -367,11 +371,14 @@ class TestProxy(unittest.TestCase):
     def test_state_get(self):
         self._mock_block_cache[b'block'.hex()] = MockBlock()
 
+        address_1 = '1' * 70
+        address_2 = '2' * 70
+
         self.assertEqual(
-            self._proxy.state_get(b'block', ['address-1', 'address-2']),
+            self._proxy.state_get(b'block', [address_1, address_2]),
             [
-                ('address-1', b'mock-address-1'),
-                ('address-2', b'mock-address-2'),
+                (address_1, 'mock-{}'.format(address_1).encode()),
+                (address_2, 'mock-{}'.format(address_2).encode()),
             ])
 
 

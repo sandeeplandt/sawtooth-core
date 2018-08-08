@@ -85,7 +85,7 @@ def _setting_entry(key, value):
     ).SerializeToString()
 
 
-class BlockTreeManager(object):
+class BlockTreeManager:
     def __str__(self):
         return str(self.block_cache)
 
@@ -122,7 +122,9 @@ class BlockTreeManager(object):
 
         self.block_publisher = BlockPublisher(
             transaction_executor=MockTransactionExecutor(),
-            block_cache=self.block_cache,
+            get_block=lambda block: self.block_cache[block],
+            transaction_committed=self.block_store.has_transaction,
+            batch_committed=self.block_store.has_batch,
             state_view_factory=self.state_view_factory,
             settings_cache=SettingsCache(
                 SettingsViewFactory(self.state_view_factory),
@@ -134,7 +136,6 @@ class BlockTreeManager(object):
             data_dir=None,
             config_dir=None,
             permission_verifier=MockPermissionVerifier(),
-            check_publish_block_frequency=0.1,
             batch_observers=[])
 
     @property

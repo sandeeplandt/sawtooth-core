@@ -15,7 +15,7 @@
 
 import hashlib
 import string
-import time
+import random
 
 from sawtooth_signing import create_context
 from sawtooth_signing import CryptoFactory
@@ -59,7 +59,7 @@ def _signer():
         context.new_random_private_key())
 
 
-class MessageFactory(object):
+class MessageFactory:
     def __init__(self, family_name, family_version, namespace, signer=None):
         self.family_name = family_name
         self.family_version = family_version
@@ -109,7 +109,7 @@ class MessageFactory(object):
                                    set_nonce=True, batcher_pub_key=None):
 
         if set_nonce:
-            nonce = str(time.time())
+            nonce = hex(random.randint(0, 2**64))
         else:
             nonce = ""
         txn_pub_key = self._signer.get_public_key().as_hex()

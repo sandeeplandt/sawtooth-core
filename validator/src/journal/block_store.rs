@@ -26,16 +26,23 @@ pub enum BlockStoreError {
 }
 
 pub trait BlockStore {
-    fn get<'a>(&'a self, block_ids: Vec<String>) -> Box<Iterator<Item = &'a Block> + 'a>;
+    fn get<'a>(
+        &'a self,
+        block_ids: &[&str],
+    ) -> Result<Box<Iterator<Item = Block> + 'a>, BlockStoreError>;
 
-    fn delete(&mut self, block_ids: Vec<String>) -> Result<(), BlockStoreError>;
+    fn delete(&mut self, block_ids: &[&str]) -> Result<Vec<Block>, BlockStoreError>;
 
     fn put(&mut self, blocks: Vec<Block>) -> Result<(), BlockStoreError>;
+
+    fn iter<'a>(&'a self) -> Result<Box<Iterator<Item = Block> + 'a>, BlockStoreError>;
 }
 
 #[derive(Default)]
 pub struct InMemoryBlockStore {
     block_by_block_id: HashMap<String, Block>,
+    chain_head_num: u64,
+    chain_head_id: String,
 }
 
 impl InMemoryBlockStore {
@@ -49,31 +56,60 @@ impl InMemoryBlockStore {
 }
 
 impl BlockStore for InMemoryBlockStore {
-    fn get<'a>(&'a self, block_ids: Vec<String>) -> Box<Iterator<Item = &'a Block> + 'a> {
-        let iterator: InMemoryGetBlockIterator = InMemoryGetBlockIterator::new(self, block_ids);
+    fn get<'a>(
+        &'a self,
+        block_ids: &[&str],
+    ) -> Result<Box<Iterator<Item = Block> + 'a>, BlockStoreError> {
+        let iterator: InMemoryGetBlockIterator = InMemoryGetBlockIterator::new(
+            self,
+            block_ids
+                .iter()
+                .map(|block_id| (*block_id).to_string())
+                .collect(),
+        );
 
-        Box::new(iterator)
+        Ok(Box::new(iterator))
     }
 
-    fn delete(&mut self, block_ids: Vec<String>) -> Result<(), BlockStoreError> {
+    fn delete(&mut self, block_ids: &[&str]) -> Result<Vec<Block>, BlockStoreError> {
         if block_ids
             .iter()
-            .any(|block_id| !self.block_by_block_id.contains_key(block_id))
+            .any(|block_id| !self.block_by_block_id.contains_key(*block_id))
         {
             return Err(BlockStoreError::UnknownBlock);
         }
-        block_ids.iter().for_each(|block_id| {
-            self.block_by_block_id.remove(block_id);
+        let blocks = block_ids.iter().map(|block_id| {
+            let block = self.block_by_block_id
+                .remove(*block_id)
+                .expect("Block removed during middle of delete operation");
+            if block.block_num <= self.chain_head_num {
+                self.chain_head_id = block.previous_block_id.clone();
+                self.chain_head_num = block.block_num - 1;
+            }
+            block
         });
-        Ok(())
+
+        Ok(blocks.collect())
     }
 
     fn put(&mut self, blocks: Vec<Block>) -> Result<(), BlockStoreError> {
         blocks.into_iter().for_each(|block| {
+            if block.block_num > self.chain_head_num {
+                self.chain_head_id = block.header_signature.clone();
+                self.chain_head_num = block.block_num;
+            }
+
             self.block_by_block_id
                 .insert(block.header_signature.clone(), block);
         });
         Ok(())
+    }
+
+    fn iter<'a>(&'a self) -> Result<Box<Iterator<Item = Block> + 'a>, BlockStoreError> {
+        Ok(Box::new(InMemoryIter {
+            blockstore: self,
+            head: &self.chain_head_id,
+        }))
     }
 }
 
@@ -97,7 +133,7 @@ impl<'a> InMemoryGetBlockIterator<'a> {
 }
 
 impl<'a> Iterator for InMemoryGetBlockIterator<'a> {
-    type Item = &'a Block;
+    type Item = Block;
 
     fn next(&mut self) -> Option<Self::Item> {
         let block = match self.block_ids.get(self.index) {
@@ -105,6 +141,70 @@ impl<'a> Iterator for InMemoryGetBlockIterator<'a> {
             None => None,
         };
         self.index += 1;
-        block
+        block.cloned()
     }
+}
+
+struct InMemoryIter<'a> {
+    blockstore: &'a InMemoryBlockStore,
+    head: &'a str,
+}
+
+impl<'a> Iterator for InMemoryIter<'a> {
+    type Item = Block;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let block = self.blockstore.get_block_by_block_id(self.head);
+        if let Some(b) = block {
+            self.head = &b.previous_block_id;
+        }
+        block.cloned()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use block::Block;
+    use journal::NULL_BLOCK_IDENTIFIER;
+
+    fn create_block(header_signature: &str, block_num: u64, previous_block_id: &str) -> Block {
+        Block {
+            header_signature: header_signature.into(),
+            previous_block_id: previous_block_id.into(),
+            block_num,
+            batches: vec![],
+            state_root_hash: "".into(),
+            consensus: vec![],
+            batch_ids: vec![],
+            signer_public_key: "".into(),
+            header_bytes: vec![],
+        }
+    }
+
+    #[test]
+    fn test_block_store() {
+        let mut store = InMemoryBlockStore::new();
+
+        let block_a = create_block("A", 1, NULL_BLOCK_IDENTIFIER);
+        let block_b = create_block("B", 2, "A");
+        let block_c = create_block("C", 3, "B");
+
+        store
+            .put(vec![block_a.clone(), block_b.clone(), block_c.clone()])
+            .unwrap();
+        assert_eq!(store.get(&["A"]).unwrap().next().unwrap(), block_a);
+
+        {
+            let mut iterator = store.iter().unwrap();
+
+            assert_eq!(iterator.next().unwrap(), block_c);
+            assert_eq!(iterator.next().unwrap(), block_b);
+            assert_eq!(iterator.next().unwrap(), block_a);
+            assert_eq!(iterator.next(), None);
+        }
+
+        assert_eq!(store.delete(&["C"]).unwrap(), vec![block_c]);
+    }
+
 }

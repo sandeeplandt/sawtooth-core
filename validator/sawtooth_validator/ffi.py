@@ -73,15 +73,21 @@ def prepare_byte_result():
     return (ctypes.POINTER(ctypes.c_uint8)(), ctypes.c_size_t(0))
 
 
-def from_c_bytes(c_data, c_data_len):
+def from_c_bytes(c_data, c_data_len, reclaim=True):
     """Takes a byte pointer and a length and converts it into a python bytes
-    value.
+    value. The bytes are reclaimed using Rust FFI code if reclaim is True.
     """
     # pylint: disable=invalid-slice-index
-    return bytes(c_data[:c_data_len.value])
+    py_bytes = bytes(c_data[:c_data_len.value])
+    if reclaim:
+        LIBRARY.call(
+            "ffi_reclaim_bytes",
+            ctypes.byref(c_data),
+            ctypes.byref(c_data_len))
+    return py_bytes
 
 
-class OwnedPointer(object, metaclass=ABCMeta):
+class OwnedPointer(metaclass=ABCMeta):
     """An owned pointer will call drop when this pointer is garbage collected.
     """
     def __init__(self, drop_ffi_call_fn, initialized_ptr=None):
@@ -122,7 +128,7 @@ class OwnedPointer(object, metaclass=ABCMeta):
         return RefPointer(self.pointer)
 
 
-class RefPointer(object):
+class RefPointer:
     """A reference to a pointer.
 
     This pointer does not manage any deallocation of the underlying memory.

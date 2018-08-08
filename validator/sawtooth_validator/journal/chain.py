@@ -23,7 +23,7 @@ from sawtooth_validator.ffi import CommonErrorCode
 from sawtooth_validator.ffi import OwnedPointer
 
 
-class ChainObserver(object, metaclass=ABCMeta):
+class ChainObserver(metaclass=ABCMeta):
     @abstractmethod
     def chain_update(self, block, receipts):
         """This method is called by the ChainController on block boundaries.
@@ -43,6 +43,7 @@ class ChainController(OwnedPointer):
         block_validator,
         state_database,
         chain_head_lock,
+        consensus_notifier,
         state_pruning_block_depth=1000,
         data_dir=None,
         observers=None
@@ -62,6 +63,7 @@ class ChainController(OwnedPointer):
             ctypes.py_object(block_validator),
             state_database.pointer,
             chain_head_lock.pointer,
+            ctypes.py_object(consensus_notifier),
             ctypes.py_object(observers),
             ctypes.c_long(state_pruning_block_depth),
             ctypes.c_char_p(data_dir.encode()),
@@ -81,9 +83,26 @@ class ChainController(OwnedPointer):
                  ctypes.byref(result))
         return result.value
 
+    def ignore_block(self, block):
+        _pylibexec('chain_controller_ignore_block', self.pointer,
+                   ctypes.py_object(block))
+
+    def fail_block(self, block):
+        _pylibexec('chain_controller_fail_block', self.pointer,
+                   ctypes.py_object(block))
+
+    def commit_block(self, block):
+        _pylibexec('chain_controller_commit_block', self.pointer,
+                   ctypes.py_object(block))
+
     def queue_block(self, block):
         _pylibexec('chain_controller_queue_block', self.pointer,
                    ctypes.py_object(block))
+
+    def submit_blocks_for_verification(self, blocks):
+        _pylibexec('chain_controller_submit_blocks_for_verification',
+                   self.pointer,
+                   ctypes.py_object(blocks))
 
     def on_block_received(self, block_wrapper):
         """This is exposed for unit tests, and should not be called directly.
@@ -107,9 +126,9 @@ class ValidationResponseSender(OwnedPointer):
         super(ValidationResponseSender, self).__init__(
             'sender_drop', initialized_ptr=sender_ptr)
 
-    def send(self, can_commit, result):
+    def send(self, block):
         _pylibexec('sender_send', self.pointer,
-                   ctypes.py_object((can_commit, result)))
+                   ctypes.py_object(block))
 
 
 def _libexec(name, *args):
@@ -124,16 +143,17 @@ def _exec(library, name, *args):
     res = library.call(name, *args)
     if res == ErrorCode.Success:
         return
-    elif res == ErrorCode.NullPointerProvided:
+
+    if res == ErrorCode.NullPointerProvided:
         raise ValueError("Provided null pointer(s)")
-    elif res == ErrorCode.InvalidDataDir:
+    if res == ErrorCode.InvalidDataDir:
         raise ValueError("Invalid data dir")
-    elif res == ErrorCode.InvalidPythonObject:
+    if res == ErrorCode.InvalidPythonObject:
         raise ValueError("Invalid python object submitted")
-    elif res == ErrorCode.InvalidBlockId:
+    if res == ErrorCode.InvalidBlockId:
         raise ValueError("Invalid block id provided.")
-    else:
-        raise TypeError("Unknown error occurred: {}".format(res.error))
+
+    raise TypeError("Unknown error occurred: {}".format(res.error))
 
 
 class ErrorCode(IntEnum):

@@ -25,7 +25,7 @@ class BlockCache(MutableMapping):
     A dict like interface to access blocks. Stores BlockState objects.
     """
 
-    class CachedValue(object):
+    class CachedValue:
         def __init__(self, value):
             self.value = value
             self.timestamp = time.time()  # the time this State was created,
@@ -65,6 +65,9 @@ class BlockCache(MutableMapping):
         return self._block_store
 
     def __getitem__(self, block_id):
+        if not block_id:
+            raise ValueError("None or empty block_id is an invalid identifier")
+
         with self._lock:
             try:
                 value = self._cache[block_id]

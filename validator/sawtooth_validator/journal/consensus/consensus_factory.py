@@ -19,7 +19,7 @@ from sawtooth_validator.journal.block_wrapper import NULL_BLOCK_IDENTIFIER
 from sawtooth_validator.state.settings_view import SettingsView
 
 
-class ConsensusFactory(object):
+class ConsensusFactory:
     """ConsensusFactory returns consensus modules by short name.
     """
 
@@ -48,8 +48,6 @@ class ConsensusFactory(object):
                 'sawtooth_validator.journal.consensus.dev_mode.'
                 'dev_mode_consensus'
             )
-        elif module_name == 'poet':
-            module_package = 'sawtooth_poet.poet_consensus'
 
         try:
             return importlib.import_module(module_package)

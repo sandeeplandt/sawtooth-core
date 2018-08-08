@@ -1,3 +1,4 @@
+
 # Copyright 2018 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,6 +14,7 @@
 # limitations under the License.
 # ------------------------------------------------------------------------------
   
+
 import pytest
 import sys
 import platform
@@ -60,6 +62,13 @@ LIMIT = 100
 def pytest_addoption(parser):
     """Contains parsers for pytest cli commands
     """
+
+ 
+ALL = set("darwin linux win32".split())
+ 
+  
+def pytest_addoption(parser):
+
     parser.addoption(
         "--get", action="store_true", default=False, help="run get tests"
     )
@@ -102,6 +111,7 @@ def pytest_addoption(parser):
 
    
 def pytest_collection_modifyitems(config, items):
+
     """Filters tests based on markers when parameters passed
        through the cli
     """
@@ -146,6 +156,7 @@ def pytest_collection_modifyitems(config, items):
         selected_items = items[:num]
         items[:] = selected_items
         return items
+
 
 @pytest.fixture(scope="session", autouse=True)
 def setup(request):
@@ -236,4 +247,34 @@ def setup(request):
     data['limit'] = LIMIT
     data['start'] = expected_batches[::-1][0]
     return data
+
+ 
+# def pytest_pycollect_makeitem(collector, name, obj):
+#     if _is_coroutine(obj):
+#         wrappped = pytest.mark.asyncio(obj)
+#         return pytest.Function(name=name, parent=collector)
+ 
+ 
+# def pytest_configure(config):
+#     # register an additional marker
+#     config.addinivalue_line("markers",
+#         "env(name): mark test to run only on named environment")
+#   
+def pytest_runtest_setup(item):
+    envnames = [mark.args[0] for mark in item.iter_markers(name='env')]
+    option = item.config.getoption("-E")
+    option = item.config.getoption("-O")
+    if option:
+        if option not in envnames:
+            pytest.skip("test requires env in %r" % envnames)
+ 
+       
+#     supported_platforms = ALL.intersection(mark.name for mark in item.iter_markers())
+#     plat = platform.platform()
+#     print(platform.system())
+#     print(platform.release())
+#     print(platform.linux_distribution())
+#     print(platform.version())
+#     if supported_platforms and plat not in supported_platforms:
+#         pytest.skip("cannot run on platform %s" % (plat))
 

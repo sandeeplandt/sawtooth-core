@@ -67,7 +67,7 @@ from sawtooth_validator.server import consensus_handlers
 LOGGER = logging.getLogger(__name__)
 
 
-class Validator(object):
+class Validator:
     def __init__(self,
                  bind_network,
                  bind_component,
@@ -202,7 +202,7 @@ class Validator(object):
         # -- Setup Transaction Execution Platform -- #
         context_manager = ContextManager(global_state_db)
 
-        batch_tracker = BatchTracker(block_store)
+        batch_tracker = BatchTracker(block_store.has_batch)
 
         settings_cache = SettingsCache(
             SettingsViewFactory(state_view_factory),
@@ -221,12 +221,29 @@ class Validator(object):
         event_broadcaster = EventBroadcaster(
             component_service, block_store, receipt_store)
 
+        # -- Consensus Engine -- #
+        consensus_thread_pool = InstrumentedThreadPoolExecutor(
+            max_workers=3,
+            name='Consensus')
+        consensus_dispatcher = Dispatcher()
+        consensus_service = Interconnect(
+            bind_consensus,
+            consensus_dispatcher,
+            secured=False,
+            heartbeat=False,
+            max_incoming_connections=20,
+            monitor=True,
+            max_future_callback_workers=10)
+
+        consensus_notifier = ConsensusNotifier(consensus_service)
+
         # -- Setup P2P Networking -- #
         gossip = Gossip(
             network_service,
             settings_cache,
             lambda: block_store.chain_head,
             block_store.chain_head_state_root,
+            consensus_notifier,
             endpoint=endpoint,
             peering_mode=peering,
             initial_seed_endpoints=seeds_list,
@@ -237,11 +254,21 @@ class Validator(object):
         )
 
         completer = Completer(
-            block_store,
-            gossip,
+            block_cache=BlockCache(
+                block_store,
+                keep_time=base_keep_time,
+                purge_frequency=30),
+            transaction_committed=block_store.has_transaction,
+            get_committed_batch_by_id=block_store.get_batch,
+            get_committed_batch_by_txn_id=(
+                block_store.get_batch_by_transaction
+            ),
+            get_chain_head=lambda: block_store.chain_head,
+            gossip=gossip,
             cache_keep_time=base_keep_time,
             cache_purge_frequency=30,
             requested_keep_time=300)
+        self._completer = completer
 
         block_sender = BroadcastBlockSender(completer, gossip)
         batch_sender = BroadcastBatchSender(completer, gossip)
@@ -266,31 +293,16 @@ class Validator(object):
             to_update=settings_cache.invalidate,
             forked=settings_cache.forked)
 
-        # -- Consensus Engine -- #
-        consensus_thread_pool = InstrumentedThreadPoolExecutor(
-            max_workers=3,
-            name='Consensus')
-        consensus_dispatcher = Dispatcher()
-        consensus_service = Interconnect(
-            bind_consensus,
-            consensus_dispatcher,
-            secured=False,
-            heartbeat=False,
-            max_incoming_connections=20,
-            monitor=True,
-            max_future_callback_workers=10)
-
-        consensus_notifier = ConsensusNotifier(consensus_service)
-
         # -- Setup Journal -- #
         batch_injector_factory = DefaultBatchInjectorFactory(
-            block_cache=block_cache,
             state_view_factory=state_view_factory,
             signer=identity_signer)
 
         block_publisher = BlockPublisher(
             transaction_executor=transaction_executor,
-            block_cache=block_cache,
+            get_block=lambda block: block_cache[block],
+            transaction_committed=block_store.has_transaction,
+            batch_committed=block_store.has_batch,
             state_view_factory=state_view_factory,
             settings_cache=settings_cache,
             block_sender=block_sender,
@@ -300,11 +312,8 @@ class Validator(object):
             data_dir=data_dir,
             config_dir=config_dir,
             permission_verifier=permission_verifier,
-            check_publish_block_frequency=0.1,
             batch_observers=[batch_tracker],
             batch_injector_factory=batch_injector_factory)
-
-        block_publisher_batch_sender = block_publisher.batch_sender()
 
         block_validator = BlockValidator(
             block_cache=block_cache,
@@ -321,6 +330,7 @@ class Validator(object):
             block_validator=block_validator,
             state_database=global_state_db,
             chain_head_lock=block_publisher.chain_head_lock,
+            consensus_notifier=consensus_notifier,
             state_pruning_block_depth=state_pruning_block_depth,
             data_dir=data_dir,
             observers=[
@@ -345,15 +355,16 @@ class Validator(object):
 
         responder = Responder(completer)
 
-        completer.set_on_batch_received(block_publisher_batch_sender.send)
         completer.set_on_block_received(chain_controller.queue_block)
         completer.set_chain_has_block(chain_controller.has_block)
+
+        self._incoming_batch_sender = None
 
         # -- Register Message Handler -- #
         network_handlers.add(
             network_dispatcher, network_service, gossip, completer,
             responder, network_thread_pool, sig_pool,
-            chain_controller.has_block, block_publisher.has_batch,
+            chain_controller.has_block, self.has_batch,
             permission_verifier, block_publisher, consensus_notifier)
 
         component_handlers.add(
@@ -362,7 +373,8 @@ class Validator(object):
             global_state_db, self.get_chain_head_state_root_hash,
             receipt_store, event_broadcaster, permission_verifier,
             component_thread_pool, client_thread_pool,
-            sig_pool, block_publisher)
+            sig_pool, block_publisher,
+            identity_signer.get_public_key().as_hex())
 
         # -- Store Object References -- #
         self._component_dispatcher = component_dispatcher
@@ -383,7 +395,10 @@ class Validator(object):
             state_view_factory=state_view_factory)
 
         consensus_handlers.add(
-            consensus_dispatcher, consensus_thread_pool, consensus_proxy)
+            consensus_dispatcher,
+            consensus_thread_pool,
+            consensus_proxy,
+            consensus_notifier)
 
         self._consensus_dispatcher = consensus_dispatcher
         self._consensus_service = consensus_service
@@ -404,21 +419,22 @@ class Validator(object):
     def start(self):
         self._component_dispatcher.start()
         self._component_service.start()
-        self._consensus_dispatcher.start()
-        self._consensus_service.start()
         if self._genesis_controller.requires_genesis():
             self._genesis_controller.start(self._start)
         else:
             self._start()
 
     def _start(self):
+        self._consensus_dispatcher.start()
+        self._consensus_service.start()
         self._network_dispatcher.start()
         self._network_service.start()
 
         self._gossip.start()
-        self._block_publisher.start()
+        self._incoming_batch_sender = self._block_publisher.start()
         self._chain_controller.start()
 
+        self._completer.set_on_batch_received(self._incoming_batch_sender.send)
         signal_event = threading.Event()
 
         signal.signal(signal.SIGTERM,
@@ -472,6 +488,16 @@ class Validator(object):
                     time.sleep(1)
 
         LOGGER.info("All threads have been stopped and joined")
+
+    def has_batch(self, batch_id):
+        if self._block_publisher.has_batch(batch_id):
+            return True
+
+        if self._incoming_batch_sender and \
+                self._incoming_batch_sender.has_batch(batch_id):
+            return True
+
+        return False
 
     def get_chain_head_state_root_hash(self):
         return self._chain_controller.chain_head.state_root_hash
