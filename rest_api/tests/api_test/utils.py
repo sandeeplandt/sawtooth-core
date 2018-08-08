@@ -200,14 +200,10 @@ def post_batch(batch, headers="None"):
         headers = {'Content-Type': 'application/json'}  
     else:
         headers = {'Content-Type': 'application/octet-stream'}
-    
-
-def post_batch(batch):
-    headers = {'Content-Type': 'application/octet-stream'}
     response = query_rest_api(
         '/batches', data=batch, headers=headers)
     response = submit_request('{}&wait={}'.format(response['link'], WAIT))
-    return response
+    return response 
 
 def query_rest_api(suffix='', data=None, headers=None):
     if headers is None:
