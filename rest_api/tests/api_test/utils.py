@@ -95,12 +95,6 @@ def get_blocks(head_id=None , id=None , start=None , limit=None , reverse=None):
         return response
 
 
-def get_batches(head_id=None , id=None , start=None , limit=None, reverse=None):  
-
-def get_blocks():
-    response = query_rest_api('/blocks')
-    return response['data']
-
 def get_batches(head_id=None , id=None , start=None , limit=None , reverse=None):  
 
     if all(v is not None for v in [head_id , id]):
@@ -170,10 +164,6 @@ def get_transaction(transaction_id):
     return response['data']
 
 
-def get_state_list(head_id=None , address=None , start=None , limit=None , reverse=None):
-    if all(v is not None for v in [head_id , address]):
-        response = query_rest_api('/state?head={}&address={}'.format(head_id , address))
-
 def get_state_list(head_id=None , id=None , start=None , limit=None , reverse=None):
     if all(v is not None for v in [head_id , id]):
         response = query_rest_api('/state?head={}&id={}'.format(head_id , id))
@@ -190,10 +180,6 @@ def get_state_list(head_id=None , id=None , start=None , limit=None , reverse=No
     if head_id is not None:
         response = query_rest_api('/state?head=%s'% head_id)
         return response 
-
-    if address is not None:
-        response = query_rest_api('/state?address=%s'% address)
-
     if id is not None:
         response = query_rest_api('/state?id=%s'% id)
         return response
